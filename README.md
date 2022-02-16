@@ -5,4 +5,4 @@ DACON_101: 머신러닝이 처음이라면 🤔 <br>
 #오늘의 파이썬 #1일1오파 #파이썬 # python
 
 # Codeit 머신러닝
-[머신 러닝 | 코드잇] (https://www.codeit.kr/courses/machine-learning). 강의 & 실습
+[머신 러닝 | 코드잇] (https://www.codeit.kr/courses/machine-learning) 강의 & 실습

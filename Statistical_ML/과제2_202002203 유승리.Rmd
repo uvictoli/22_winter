@@ -1,0 +1,128 @@
+---
+title: "[과제2] 밀도 함수 추정 : gradient 방법을 사용한 해와 비교하기"
+output: html_document
+date: "2023-05-15"
+---
+<br>
+
+#### 학과 : 컴퓨터전자시스템공학부
+#### 학번 : 202002203
+#### 이름 : 유승리
+
+<br>
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+***
+
+- 데이터 $x_1$, ... , $x_N$ : N($θ$, 1)에서 생성
+- 모의실험에서 사용할 참값은 $θ = 3$, 표본의 크기는 $N = 10$
+
+
+```{r}
+sigmoid <- function(x) 1 / (1 + exp(-x))
+logit <- function(p) log(pmax(p, 1e-12) / pmax(1-p, 1e-12))
+
+# 데이터 초기화
+set.seed(0)
+N.tr <- 10
+beta <- c(1, 3)
+x <- rnorm(N.tr, mean = 3, sd = 1)
+theta <- sigmoid(cbind(rep(1, N.tr), x) %*% beta)
+y <- 1*(runif(N.tr) <= theta)
+```
+
+
+# 1. Gradient Descent
+```{r}
+Loss <- function(beta, x, y) {
+  eps <- 1.0e-12
+  N.tr <- length(y)
+  theta <- sigmoid(cbind(rep(1, N.tr), x) %*% beta)
+  theta <- pmin(pmax(theta, eps), 1-eps)
+  ans <- -mean(y*log(theta) + (1-y)*log(1-theta))
+  
+  return (ans)
+}
+
+GD <- function(x, y, eta = 1, doplot = TRUE, tol = 1e-9, max.iter = 1000){
+  # Initialization
+  set.seed(123)
+  beta <- rnorm(2)
+  
+  N.tr <- length(y)
+  iter <- 0
+  x.tilde <- cbind(rep(1, N.tr), x)
+  loss <- rep(NA, max.iter)
+  beta.trace <- matrix(NA, max.iter, 2)
+  converged <- 0
+  
+  # Iteration
+  while (iter < max.iter){
+    iter <- iter + 1
+    
+    # Gradient
+    tmp <- y - sigmoid(x.tilde %*% beta)
+    del <- cbind(tmp, tmp)
+    gr <- colMeans(del * x.tilde)
+    
+    # Update 
+    beta <- beta + eta * gr
+    beta.trace[iter, ] <- beta
+    
+    loss[iter] <- Loss(beta, x, y)
+    if (iter > 5) {
+      if (abs(loss[iter] - loss[iter - 1]) < tol) {
+        converged <- 1
+        break
+      }
+    }
+  }
+  loss <- loss[!is.na(loss)]
+  beta.trace <- na.omit(beta.trace)
+  
+  if (doplot) {
+    par(mfrow = c(1,2))
+    plot(loss, type = "b", col = "navy",
+         xlab = "Iteration", ylab = "Loss")
+    plot(beta.trace, type = "b", col = "darkred",
+         xlab = expression(beta[0]), ylab = expression(beta[1]))
+  }
+  
+  return (list(beta = beta, loss = loss, beta.trace = beta.trace, iter = iter, converged = converged))
+}
+
+# 결과 확인
+answer <- GD(x, y)
+print(answer$beta[2])
+```
+
+# 2. MLE
+```{r}
+log.likelihood <- function(theta, x){
+  ntheta <- length(theta)
+  ell <- rep(NA, ntheta)
+  for (i in 1:ntheta){
+    ell[i] <- sum((x - theta[i])^2)
+  }
+  ell <- -0.5*ell
+  
+  return(ell)
+}
+
+theta.grid <- seq(from = -1, to = 7, len = 401)
+plot(theta.grid, log.likelihood(theta.grid, x),
+     type = "l", lwd = 3,
+     xlab = expression(theta), ylab = "Log-likelihood",
+     cex.axis = 0.8)
+
+opt <- optimize(f = log.likelihood, x = x,
+                lower = -5, upper = 10, maximum = TRUE)
+
+print(opt$maximum)
+```
+
+# 결과
+Gradient Descent를 수행했을 때, 손실함수를 최소로 하는 파라미터의 값은 3.552901,  
+MLE를 수행했을때, 로그가능도 함수를 최대로 하는 값은 3.358924로  
+<u>두 방식의 결과가 비슷한 것을 확인할 수 있다.</u>

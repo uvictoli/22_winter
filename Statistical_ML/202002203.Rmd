@@ -1,0 +1,204 @@
+---
+title: "통계적기계학습 (중간ver.)"
+author: "202002203 유승리"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+AD <- read.csv("/Users/yooseungli/Downloads/alzheimer.csv", sep = ",", head = T)
+
+# 형변환
+AD$M.F <- as.factor(AD$M.F)
+AD$Group <- as.factor((AD$Group))
+
+summary(AD)
+```
+→ 데이터의 수가 많은 편이 아니라 결측치가 있는 '행을 제거'하는 것보단 다른 값으로 결측치를 채울 수 있는 방법을 선택함  
+<br>
+```{r}
+AD <- read.csv("/Users/yooseungli/Downloads/alzheimer.csv", sep = ",", head = T)
+AD$SES <- approx(x = seq_along(AD$SES), y = AD$SES, method = "linear", n = length(AD$SES))$y
+AD$MMSE <- approx(x = seq_along(AD$MMSE), y = AD$MMSE, method = "linear", n = length(AD$MMSE))$y
+
+AD$M.F <- as.factor(AD$M.F)
+AD$Group <- as.factor((AD$Group))
+```
++) 선형보간법으로 결측치를 처리해보았지만 로지스틱 회귀만 정확도가 약간 증가하고 SVM, RF에서는 오히려 정확도가 감소하는 결과를 보였음  
+<br>
+
+#### 평균으로 결측치 처리
+```{r}
+SES.mean <- ifelse(is.na(AD$SES), round(mean(AD$SES, na.rm = T), 2), AD$SES)
+AD$SES <- ifelse(is.na(AD$SES), SES.mean, AD$SES)
+
+MMSE.mean <- ifelse(is.na(AD$MMSE), round(mean(AD$MMSE, na.rm = T), 2), AD$MMSE)
+AD$MMSE <- ifelse(is.na(AD$MMSE), MMSE.mean, AD$MMSE)
+
+summary(AD)
+```
+<br>
+<hr>
+# 모델 학습
+#### 데이터 분할
+train과 test 데이터를 7:3으로 분할
+```{r}
+set.seed(0)
+N <- nrow(AD)
+N.tr <- round(0.7*N)
+
+tr <- sort(sample(1:N, N.tr, replace = FALSE))
+AD.tr <- AD[tr,]
+AD.te <- AD[-tr,]
+```
+
+## 1. 로지스틱 회귀
+```{r}
+library(nnet)
+logistic.model <- multinom(Group ~ ., data = AD.tr)
+logistic.predictions <- predict(logistic.model, newdata = AD.te)
+
+# 예측 결과 평가
+library(caret)
+confusion_matrix <- confusionMatrix(logistic.predictions, AD.te$Group)
+print(confusion_matrix)
+```
+
+
+## 2. SVM
+```{r}
+library(e1071)
+tobj <- tune.svm(Group  ~ ., data = AD.tr, 
+                kernel = "radial",
+                gamma = 10^(-3:3),
+                cost = 10^(-3:5))
+
+print(tobj$best.parameters)
+
+svm.model <- svm(Group ~ ., data = AD.tr,
+                 kernel = "radial",
+                 cost = tobj$best.parameters$cost,
+                 gamma = tobj$best.parameters$gamma)
+
+
+svm.predictions <- predict(svm.model, newdata = AD.te)
+
+confusion_matrix <- confusionMatrix(svm.predictions, AD.te$Group)
+print(confusion_matrix)
+```
+
+## Random Forest
+```{r}
+library(randomForest)
+
+target <- AD.tr$Group
+features <- AD.tr[, -1]
+
+rf.model <- randomForest(x = features, y = target, importance = TRUE)
+rf.predictions <- predict(rf.model, newdata = AD.te, type = "response")
+
+confusion_matrix <- confusionMatrix(rf.predictions, AD.te$Group)
+print(confusion_matrix)
+```
+<br>
+
+#### 변수별 기여도 확인하기
+```{r}
+varImpPlot(rf.model, type = 1)
+varImpPlot(rf.model, type = 2)
+```
+<br>
+<hr>
+
+### CDR, MMSE만 선택하여 학습시킨 모델과의 성능 비교
+- MMSE: 미니멘탈 상태 검사(Mini Mental State Examination) 점수로, 인지 능력을 평가하기 위해 사용되는 검사 결과이다.
+- CDR: 임상적 치매 평가(Clinical Dementia Rating)결과로, 치매의 심각성을 나타내는 지표이다.  
+<br>
+
+#### 로지스틱회귀
+```{r}
+library(nnet)
+logistic.model <- multinom(Group ~ CDR + MMSE, data = AD.tr)
+logistic.predictions <- predict(logistic.model, newdata = AD.te)
+
+# 예측 결과 평가
+library(caret)
+confusion_matrix <- confusionMatrix(logistic.predictions, AD.te$Group)
+print(confusion_matrix)
+```
+
+#### SVM
+```{r}
+tobj <- tune.svm(Group  ~ CDR + MMSE, data = AD.tr, 
+                kernel = "radial",
+                gamma = 10^(-3:3),
+                cost = 10^(-3:5))
+
+print(tobj$best.parameters)
+
+svm.model <- svm(Group ~ CDR + MMSE, data = AD.tr,
+                 kernel = "radial",
+                 cost = tobj$best.parameters$cost,
+                 gamma = tobj$best.parameters$gamma)
+
+
+svm.predictions <- predict(svm.model, newdata = AD.te)
+
+confusion_matrix <- confusionMatrix(svm.predictions, AD.te$Group)
+print(confusion_matrix)
+```
+
+#### Random Forest
+```{r}
+library(randomForest)
+
+target <- AD.tr$Group
+features <- AD.tr[, 6:7]
+
+rf.model <- randomForest(x = features, y = target, importance = TRUE)
+rf.predictions <- predict(rf.model, newdata = AD.te, type = "response")
+
+confusion_matrix <- confusionMatrix(rf.predictions, AD.te$Group)
+print(confusion_matrix)
+```
+<br>
+<hr>
+<br>
+
+#### 1. 설명변수를 모두 사용한 경우
+- 로지스틱 회귀 : 0.9375
+- SVM : 0.9018
+- RandomForest : 0.9286  
+⇒ Confusion Matrix에서 볼 수 있듯 Demented / Nondemented  분류에 대해서는 틀리는 경우가 많지 않음
+Converted를 Nondemented로 분류하는 경우가 많았음
+<br>
+
+#### 2. CDR, MMSE만을 설명변수로 사용한 경우
+- 로지스틱 회귀 : 0.9107 
+- SVM : 0.9107 
+- RandomForest : 0.9107   
+⇒ 세 모델에서 정확도뿐만 아니라 모든 평가지표가 동일한 값을 나타냄. 특히 Demented / Nondemented  분류는 100% 정확하게 예측하지만 Converted는 하나도 맞히지 못하는 결과를 볼 수 있음.
+
+```{r}
+# 필요한 패키지 로드
+library(dplyr)
+library(caret)
+
+# 데이터셋 및 클래스 분포 확인
+table(AD.tr$Group)
+
+# 언더샘플링 수행
+set.seed(0)
+undersampled_data <- group_by(AD.tr, Group) %>%
+  sample_n(size = min(table(Group))) %>%
+  ungroup()
+
+# 언더샘플링 결과 확인
+table(undersampled_data$Group)
+```
+
